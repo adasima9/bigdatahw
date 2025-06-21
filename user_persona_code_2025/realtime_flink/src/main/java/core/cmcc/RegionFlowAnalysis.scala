@@ -121,70 +121,72 @@ object RegionFlowAnalysis {
 
     val enrichedRegionEventStream = regionEventStream
       .keyBy(_.imsi)
-      .process(new KeyedProcessFunction[String, UserRegionFlow, UserRegionFlow] {
+      .process(new KeyedProcessFunction[String, UserRegionFlow, (String, Long)] {
         lazy val regionState: ValueState[String] = getRuntimeContext.getState(new ValueStateDescriptor[String]("regionState", classOf[String]))
         lazy val hasReportedState: ValueState[Boolean] = getRuntimeContext.getState(new ValueStateDescriptor[Boolean]("hasReported", classOf[Boolean]))
-        override def processElement(value: UserRegionFlow, ctx: KeyedProcessFunction[String, UserRegionFlow, UserRegionFlow]#Context, out: Collector[UserRegionFlow]): Unit = {
-          out.collect(value)
+
+        override def processElement(value: UserRegionFlow, ctx: KeyedProcessFunction[String, UserRegionFlow, (String, Long)]#Context, out: Collector[(String, Long)]): Unit = {
           if (value.isIn == 1) {
             regionState.update(value.regionId)
             hasReportedState.update(false)
             ctx.timerService().registerProcessingTimeTimer(System.currentTimeMillis() + 30 * 1000)
           } else if (value.isIn == 0) {
             if (regionState.value() != null && hasReportedState.value()) {
-              out.collect(UserRegionFlow(value.imsi, 3, regionState.value(), value.gender, value.age, value.eventTime))
+              out.collect((regionState.value(), -1L)) // 离开长驻
             }
             regionState.clear()
             hasReportedState.clear()
           }
         }
-        override def onTimer(timestamp: Long, ctx: KeyedProcessFunction[String, UserRegionFlow, UserRegionFlow]#OnTimerContext, out: Collector[UserRegionFlow]): Unit = {
+
+        override def onTimer(timestamp: Long, ctx: KeyedProcessFunction[String, UserRegionFlow, (String, Long)]#OnTimerContext, out: Collector[(String, Long)]): Unit = {
           val regionId = regionState.value()
           val reported = hasReportedState.value()
           if (regionId != null && !reported) {
-            out.collect(UserRegionFlow(ctx.getCurrentKey, 2, regionId, 0, 0, ""))
+            out.collect((regionId, 1L)) // 进入长驻
             hasReportedState.update(true)
           }
         }
       })
 
-    val regionStayChangeStream = enrichedRegionEventStream
-      .filter(e => e.isIn == 2 || e.isIn == 3)
-      .map(e => (e.regionId, if (e.isIn == 2) 1L else -1L))
+    val regionStayTotalStream = enrichedRegionEventStream
       .keyBy(_._1)
-      .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
-      .reduce(
-        (a, b) => (a._1, a._2 + b._2),
-        (key, window, input, out: Collector[RegionStayCount]) => {
-          val record = input.iterator.next()
-          out.collect(RegionStayCount(record._1, record._2, window.getStart, window.getEnd))
-        }
-      )
+      .process(new KeyedProcessFunction[String, (String, Long), RegionStayCount] {
+        lazy val currentCountState: ValueState[Long] = getRuntimeContext.getState(new ValueStateDescriptor[Long]("currentCount", classOf[Long]))
 
-    regionStayChangeStream.print()
+        override def processElement(value: (String, Long), ctx: KeyedProcessFunction[String, (String, Long), RegionStayCount]#Context, out: Collector[RegionStayCount]): Unit = {
+          val currentCount = Option(currentCountState.value()).getOrElse(0L)
+          val updatedCount = currentCount + value._2
+          currentCountState.update(updatedCount)
+          val now = System.currentTimeMillis()
+          out.collect(RegionStayCount(value._1, updatedCount, now, now))
+        }
+      })
+
+    regionStayTotalStream.print()
 
 //    val conf = new Configuration()
 //    conf.set("hbase.zookeeper.quorum", "bigdata01:2181")
 //    conf.set("hbase.rootdir", "hdfs://bigdata01:9000/hbase")
 //
 //    val hbaseSinkStay = new HBaseSinkFunction[RegionStayCount](
-//      "region_stay",
+//      "region_stay_total",
 //      conf,
 //      new HBaseMutationConverter[RegionStayCount] {
 //        override def open(): Unit = {}
+//
 //        override def convertToMutation(record: RegionStayCount): Mutation = {
-//          val rowKey = s"${record.regionId}_${record.windowStart}"
+//          val rowKey = s"${record.regionId}_${record.windowEnd}"
 //          val put = new Put(rowKey.getBytes())
 //          put.addColumn("stay".getBytes(), "count".getBytes(), record.count.toString.getBytes())
-//          put.addColumn("stay".getBytes(), "window_start".getBytes(), record.windowStart.toString.getBytes())
-//          put.addColumn("stay".getBytes(), "window_end".getBytes(), record.windowEnd.toString.getBytes())
+//          put.addColumn("stay".getBytes(), "ts".getBytes(), record.windowEnd.toString.getBytes())
 //          put
 //        }
 //      },
 //      100, 100, 1000
 //    )
 //
-//    regionStayChangeStream.addSink(hbaseSinkStay)
+//    regionStayTotalStream.addSink(hbaseSinkStay)
 
     env.execute("CalcRegionUserInfo with InOut + Stay Detection")
   }
