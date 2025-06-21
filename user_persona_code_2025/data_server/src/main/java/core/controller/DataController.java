@@ -138,6 +138,74 @@ public class DataController {
         return resJson;
     }
 
+    /**
+     * 查询指定区域长时间驻留人群人数。
+     * @param regionId
+     * @return
+     */
+    @RequestMapping(value = "/regionStayTotal", method = RequestMethod.GET)
+    public JSONObject queryStayTotalByRegion(@RequestParam("region_id") String regionId) {
+        JSONObject resJson = new JSONObject();
+        try {
+            resJson.put("code", 200);
+            resJson.put("msg", "");
+            JSONObject data = new JSONObject();
+            resJson.put("data", data);
+
+            // 查询 HBase 数据
+            Map<String, String> regionDataMap = HBaseUtil.getRegionPortraitFromHBase("region_stay_total", regionId);
+
+            // 解析字段（确保值存在才放入）
+            if (regionDataMap.containsKey("count")) {
+                data.put("count", Integer.parseInt(regionDataMap.get("count")));
+            }
+            if (regionDataMap.containsKey("ts")) {
+                data.put("ts", regionDataMap.get("ts"));
+            }
+
+            // 附加 regionId
+            data.put("regionId", regionId);
+
+        } catch (Exception e) {
+            resJson.put("code", 500);
+            resJson.put("msg", "查询失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return resJson;
+    }
+
+    @RequestMapping(value = "/regionStayDetail", method = RequestMethod.GET)
+    public JSONObject queryStayDetailByRegion(
+            @RequestParam("region_id") String regionId,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        JSONObject resJson = new JSONObject();
+        try {
+            resJson.put("code", 200);
+            resJson.put("msg", "");
+            JSONArray data = new JSONArray();
+            resJson.put("data", data);
+
+            List<Map<String, String>> records = HBaseUtil.scanByRowPrefix(
+                    "region_stay_detail",
+                    regionId + "_",
+                    limit,
+                    "info",
+                    Arrays.asList("imsi", "gender", "age", "eventTime", "eventType")
+            );
+            for (Map<String, String> record : records) {
+                JSONObject json = new JSONObject();
+                json.putAll(record);
+                data.add(json);
+            }
+
+        } catch (Exception e) {
+            resJson.put("code", 500);
+            resJson.put("msg", "查询失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return resJson;
+    }
+
 
 //    /**
 //     * 获取栅格热力

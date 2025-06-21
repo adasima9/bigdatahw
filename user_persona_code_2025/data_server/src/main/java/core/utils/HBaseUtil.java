@@ -98,6 +98,46 @@ public class HBaseUtil {
     }
 
     /**
+
+     */
+    public static List<Map<String, String>> scanByRowPrefix(
+            String tableName,
+            String rowKeyPrefix,
+            int limit,
+            String columnFamily,
+            List<String> qualifiers
+    ) throws IOException {
+        List<Map<String, String>> resultList = new ArrayList<>();
+        Table table = null;
+        ResultScanner scanner = null;
+        try {
+            table = conn.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+            scan.setRowPrefixFilter(Bytes.toBytes(rowKeyPrefix));
+            scan.setCaching(limit);
+            scan.setReversed(true);
+
+             scanner = table.getScanner(scan);
+            int count = 0;
+            for (Result result : scanner) {
+                if (count++ >= limit) break;
+                Map<String, String> record = new HashMap<>();
+                for (String qualifier : qualifiers) {
+                    byte[] value = result.getValue(Bytes.toBytes(columnFamily), Bytes.toBytes(qualifier));
+                    if (value != null) {
+                        record.put(qualifier, Bytes.toString(value));
+                    }
+                }
+                resultList.add(record);
+            }
+        } finally {
+            if (scanner != null) scanner.close();
+            if (table != null) table.close();
+        }
+        return resultList;
+    }
+
+    /**
      * 关闭HBase连接
      */
     public static void closeConnection() {
