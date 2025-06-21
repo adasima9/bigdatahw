@@ -206,6 +206,38 @@ public class DataController {
         return resJson;
     }
 
+    @RequestMapping(value = "/regionFlowEvent", method = RequestMethod.GET)
+    public JSONObject queryFlowEventByRegion(
+            @RequestParam("region_id") String regionId,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        JSONObject resJson = new JSONObject();
+        try {
+            resJson.put("code", 200);
+            resJson.put("msg", "");
+            JSONArray data = new JSONArray();
+            resJson.put("data", data);
+
+            List<Map<String, String>> records = HBaseUtil.scanByRowPrefix(
+                    "region_flow_event",
+                    regionId + "_",
+                    limit,
+                    "info",
+                    Arrays.asList("imsi", "gender", "age", "eventTime", "eventType")
+            );
+            for (Map<String, String> record : records) {
+                JSONObject json = new JSONObject();
+                json.putAll(record);
+                data.add(json);
+            }
+
+        } catch (Exception e) {
+            resJson.put("code", 500);
+            resJson.put("msg", "查询失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return resJson;
+    }
+
 
 //    /**
 //     * 获取栅格热力

@@ -215,6 +215,29 @@ object RegionFlowAnalysis {
 
     enrichedRegionEventStream.addSink(hbaseSinkStayLongDetail)
 
+    val hbaseSinkRegionEvent = new HBaseSinkFunction[UserRegionFlow](
+      "region_flow_event",
+      conf, // HBase configuration
+      new HBaseMutationConverter[UserRegionFlow] {
+        override def open(): Unit = {}
+
+        override def convertToMutation(record: UserRegionFlow): Mutation = {
+          val reversedTs = Long.MaxValue - System.currentTimeMillis()
+          val rowKey = s"${record.regionId}_${reversedTs}_${record.imsi}"
+          val put = new Put(rowKey.getBytes())
+          put.addColumn("info".getBytes(), "imsi".getBytes(), record.imsi.getBytes())
+          put.addColumn("info".getBytes(), "gender".getBytes(), record.gender.toString.getBytes())
+          put.addColumn("info".getBytes(), "age".getBytes(), record.age.toString.getBytes())
+          put.addColumn("info".getBytes(), "eventTime".getBytes(), record.eventTime.getBytes())
+          put.addColumn("info".getBytes(), "eventType".getBytes(), record.isIn.toString.getBytes()) // 1 for enter, 0 for leave
+          put
+        }
+      },
+      100, 100, 1000
+    )
+
+    regionEventStream.addSink(hbaseSinkRegionEvent)
+
     env.execute("CalcRegionUserInfo with InOut + Stay Detection")
   }
 }
