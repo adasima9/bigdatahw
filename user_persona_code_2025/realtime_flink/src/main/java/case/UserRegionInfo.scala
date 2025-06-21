@@ -4,6 +4,7 @@ case class UserRegionInfo (
                    imsi:String,
                    laccell:String,
                    gender:Int,
-                   age:Int
+                   age:Int,
+                   eventTime: String
                    )
 

@@ -1,6 +1,6 @@
 package `case`
 
-case class RegionLongStay(
+case class RegionStayCount(
                            regionId: String,
                            count: Long,
                            windowStart: Long,
