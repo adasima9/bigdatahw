@@ -98,6 +98,46 @@ public class HBaseUtil {
     }
 
     /**
+     * 查询指定区域、指定时间内驻留时长大于minStayMinutes的人员明细
+     * @param tableName HBase表名
+     * @param regionId 区域ID
+     * @param produceHour 时间（如2024061010）
+     * @param minStayMinutes 驻留时长下限（分钟）
+     * @return List<Map<String, Object>> 每个Map包含imsi、gender、age、enter_time、stay_minutes等
+     */
+    public static List<Map<String, Object>> getRegionStayPersonList(String tableName, String regionId, String produceHour, int minStayMinutes) throws IOException {
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        String rowKey = regionId + "_" + produceHour;
+        Table table = conn.getTable(TableName.valueOf(tableName));
+        Get get = new Get(Bytes.toBytes(rowKey));
+        Result result = table.get(get);
+        List<Cell> cells = result.listCells();
+        for (Cell cell : cells) {
+            String imsi = new String(CellUtil.cloneQualifier(cell));
+            String value = new String(CellUtil.cloneValue(cell));
+            // 假设value为json字符串，包含gender, age, enter_time, stay_minutes
+            try {
+                // 解析json字符串
+                com.alibaba.fastjson.JSONObject obj = com.alibaba.fastjson.JSONObject.parseObject(value);
+                int stayMinutes = obj.getIntValue("stay_minutes");
+                if (stayMinutes >= minStayMinutes) {
+                    Map<String, Object> person = new HashMap<>();
+                    person.put("imsi", imsi);
+                    person.put("gender", obj.getIntValue("gender"));
+                    person.put("age", obj.getIntValue("age"));
+                    person.put("enter_time", obj.getString("enter_time"));
+                    person.put("stay_minutes", stayMinutes);
+                    resultList.add(person);
+                }
+            } catch (Exception e) {
+                // 解析异常，跳过该条
+                continue;
+            }
+        }
+        return resultList;
+    }
+
+    /**
      * 关闭HBase连接
      */
     public static void closeConnection() {

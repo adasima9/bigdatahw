@@ -290,6 +290,36 @@ public class DataController {
         return result;
     }
 
+    /**
+     * 查询指定区域、指定时间内长时间驻留人员明细
+     * @param regionId 区域ID
+     * @param produceHour 时间（如2024061010）
+     * @param minStayMinutes 驻留时长下限（分钟，默认N）
+     * @return 驻留人员明细列表
+     */
+    @GetMapping("/regionStayPerson")
+    public JSONObject queryRegionStayPerson(
+            @RequestParam("region_id") String regionId,
+            @RequestParam("produce_hour") String produceHour,
+            @RequestParam(value = "min_stay_minutes", required = false, defaultValue = "10") int minStayMinutes) {
+
+        JSONObject resJson = new JSONObject();
+        try {
+            List<Map<String, Object>> personList = HBaseUtil.getRegionStayPersonList(
+                    "region_stay_person", regionId, produceHour, minStayMinutes);
+
+            resJson.put("code", 200);
+            resJson.put("msg", "");
+            JSONObject data = new JSONObject();
+            data.put("personList", personList);
+            resJson.put("data", data);
+        } catch (Exception e) {
+            resJson.put("code", 500);
+            resJson.put("msg", "查询失败: " + e.getMessage());
+        }
+        return resJson;
+    }
+
 
 
 }
